@@ -1,0 +1,66 @@
+{
+  "entries": [
+    {
+      "name": "close",
+      "x_start": 0,
+      "y_start": 0,
+      "image_width": 8,
+      "image_height": 8,
+      "start_coord": [
+        0.015625,
+        0.0625
+      ],
+      "end_coord": [
+        0.234375,
+        0.9375
+      ]
+    },
+    {
+      "name": "maximize",
+      "x_start": 8,
+      "y_start": 0,
+      "image_width": 8,
+      "image_height": 8,
+      "start_coord": [
+        0.265625,
+        0.0625
+      ],
+      "end_coord": [
+        0.484375,
+        0.9375
+      ]
+    },
+    {
+      "name": "minimize",
+      "x_start": 16,
+      "y_start": 0,
+      "image_width": 8,
+      "image_height": 8,
+      "start_coord": [
+        0.515625,
+        0.0625
+      ],
+      "end_coord": [
+        0.734375,
+        0.9375
+      ]
+    },
+    {
+      "name": "solid",
+      "x_start": 24,
+      "y_start": 0,
+      "image_width": 8,
+      "image_height": 8,
+      "start_coord": [
+        0.765625,
+        0.0625
+      ],
+      "end_coord": [
+        0.984375,
+        0.9375
+      ]
+    }
+  ],
+  "width": 32,
+  "height": 8
+}

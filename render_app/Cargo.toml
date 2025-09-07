@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "bin-test",
+    "lib-core",
+    "lib-render", 
+    "lib-web"
+]

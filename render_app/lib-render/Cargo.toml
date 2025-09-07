@@ -1,0 +1,17 @@
+[package]
+name = "lib-render"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+winit = { version = "0.30.12", features = ["android-native-activity"] }
+wgpu = "26.0.1"
+bytemuck = "1.23.2"
+glam = "0.30.5"
+image = "0.25.6"
+serde = { version = "1.0.219", features = ["derive"] }
+log = "0.4"
+#wgpu_text = "26.0.0"
+
+tobj = { version = "3.2", default-features = false, features = ["async", "log"]}

@@ -1,0 +1,19 @@
+{
+    "settings.cycle": [
+        {
+            "id": "colorTheme", // must be unique
+            "overrideWorkspaceSettings": false,
+            "values": [
+                {
+                    "workbench.colorTheme": "Catppuccin Frappé",
+                    "rust-analyzer.cargo.target": "wasm32-unknown-unknown"
+
+                },
+                {
+                    "workbench.colorTheme": "Catppuccin Macchiato",
+                    "rust-analyzer.cargo.target": null
+                }
+            ]
+        }
+    ],
+}
