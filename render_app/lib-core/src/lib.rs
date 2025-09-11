@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use lib_render::State;
 use winit::{application::ApplicationHandler, event::{KeyEvent, MouseButton, WindowEvent}, event_loop::{ActiveEventLoop, EventLoop}, keyboard::PhysicalKey, window::Window};
-
+pub use::lib_render::types;
 pub mod user_interface;
+
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;

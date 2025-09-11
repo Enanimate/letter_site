@@ -10,8 +10,6 @@ fn web_entry() {
     let mut interface = GraphicsInterface::new();
 
     interface.show(|ui| {
-        ui.add_panel([0.0, 0.0, 1.0], [0.5, 0.5]);
-        ui.add_panel([0.5, 0.5, 1.0], [0.5, 0.5]);
     });
 
     run_web(interface).unwrap_throw();

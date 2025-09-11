@@ -1,3 +1,5 @@
+use std::any::Any;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
@@ -60,7 +62,20 @@ impl Instance {
     }
 }
 
-pub trait Element {
+pub trait Element: Any {
     fn geometry(&self) -> GeometryType;
     fn as_instance(&self) -> Instance;
+    fn as_clickable(&self) -> Option<&dyn Clickable> {
+        None
+    }
+}
+
+pub trait Clickable {
+    fn click(&self) -> Propogate;
+}
+
+#[derive(Debug)]
+pub enum Propogate {
+    Propogate,
+    Ok
 }

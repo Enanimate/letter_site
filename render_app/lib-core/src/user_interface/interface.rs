@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use lib_render::types::{Element, GeometryType, Instance};
 
-use crate::user_interface::UserInterface;
+use crate::user_interface::{UserInterface};
 
 pub struct GraphicsInterface {
     elements: HashMap<GeometryType, Vec<Box<dyn Element>>>,

@@ -4,13 +4,14 @@ pub mod types;
 pub mod gui_backend;
 mod camera;
 mod models;
+mod texture;
 
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::util::DeviceExt;
 use winit::{
     dpi::PhysicalSize, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window
 };
 
-use crate::{camera::{Camera2D, Camera2DUniform, Camera3D, Camera3DUniform}, gui_backend::BackendGraphicsInterface, models::{ModelRender, ModelUniform, ModelVertex}, types::{GeometryType, Instance, Vertex}};
+use crate::{camera::{Camera2D, Camera2DUniform, Camera3D, Camera3DUniform}, gui_backend::BackendGraphicsInterface, models::{DrawModel, model, types::ModelVertex}, types::{GeometryType, Instance, Vertex}};
 
 pub struct State {
     surface: wgpu::Surface<'static>,
@@ -18,27 +19,24 @@ pub struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     is_surface_configured: bool,
-    // NEW!
+
     render_pipeline: wgpu::RenderPipeline,
     pub window: Arc<Window>,
 
-    camera: Camera2D,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
+    ui_camera: Camera2D,
+    ui_camera_buffer: wgpu::Buffer,
+    ui_camera_bind_group: wgpu::BindGroup,
 
-    // Model (3D) Camera
     model_camera: Camera3D,
     model_camera_buffer: wgpu::Buffer,
     model_camera_bind_group: wgpu::BindGroup,
-
-    model_bind_group: wgpu::BindGroup,
 
     backend_graphics_interface: BackendGraphicsInterface,
     staged_ui_data: HashMap<GeometryType, Vec<Instance>>,
 
     model_render_pipeline: wgpu::RenderPipeline,
-
-    model_render: ModelRender,
+    obj_model: model::Model,
+    obj_model_outer: model::Model,
 }
 
 impl State {
@@ -107,11 +105,11 @@ impl State {
             desired_maximum_frame_latency: 2,
         };
 
-        let camera = Camera2D::new(window_size.width, window_size.height);
+        let ui_camera = Camera2D::new(window_size.width, window_size.height);
         let camera_uniform = Camera2DUniform {
-            view_proj: camera.build_view_projection_matrix().to_cols_array_2d(),
+            view_proj: ui_camera.build_view_projection_matrix().to_cols_array_2d(),
         };
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let ui_camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Uniform Buffer"),
             contents: bytemuck::cast_slice(&[camera_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
@@ -131,13 +129,13 @@ impl State {
             ],
             label: Some("Camera Bind Group Layout"),
         });
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { 
+        let ui_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { 
             label: Some("Camera 2D Bind Group"), 
             layout: &camera_bind_group_layout, 
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
+                    resource: ui_camera_buffer.as_entire_binding(),
                 }
             ] 
         });
@@ -159,6 +157,32 @@ impl State {
                 }
             ]
         });
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        let obj_model = model::load_model("a.obj", &device, &queue, &texture_bind_group_layout, 0.9, [1.0, 0.0, 0.0, 0.5]).await.unwrap();
+        let obj_model_outer = model::load_model("a.obj", &device, &queue, &texture_bind_group_layout, 1.0, [0.0, 1.0, 0.0, 0.5]).await.unwrap();
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -223,36 +247,6 @@ impl State {
             cache: None,
         });
 
-        let model_uniform = ModelUniform::new();
-        let model_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("Model Buffer"),
-            contents: bytemuck::cast_slice(&[model_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let model_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Model Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let model_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &model_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: model_buffer.as_entire_binding(),
-            }],
-            label: Some("Model Bind Group"),
-        });
-
         let model_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/model_shader.wgsl").into()),
@@ -261,12 +255,12 @@ impl State {
         let model_render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &model_bind_group_layout],
+                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
         let model_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
+            label: Some("Model Render Pipeline"),
             layout: Some(&model_render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &model_shader,
@@ -281,10 +275,7 @@ impl State {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::REPLACE,
-                    }),
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -316,7 +307,6 @@ impl State {
         });
 
         backend_graphics_interface.update_buffer_data(&queue, &vertices, &indices, &instances);
-        let model_render = ModelRender::new(&device, "a.obj");
         Ok(Self {
             surface,
             device,
@@ -326,22 +316,21 @@ impl State {
             render_pipeline,
             window,
 
-            camera,
-            camera_buffer,
-            camera_bind_group,
+            ui_camera,
+            ui_camera_buffer,
+            ui_camera_bind_group,
 
             model_camera,
             model_camera_buffer,
             model_camera_bind_group,
-
-            model_bind_group,
 
             backend_graphics_interface,
             staged_ui_data,
 
             model_render_pipeline,
 
-            model_render
+            obj_model,
+            obj_model_outer,
         })
     }
 
@@ -352,9 +341,9 @@ impl State {
             self.surface.configure(&self.device, &self.config);
             self.is_surface_configured = true;
 
-            self.camera.update_screen_size(PhysicalSize::new(width, height));
-            self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[Camera2DUniform {
-                view_proj: self.camera.build_view_projection_matrix().to_cols_array_2d(),
+            self.ui_camera.update_screen_size(PhysicalSize::new(width, height));
+            self.queue.write_buffer(&self.ui_camera_buffer, 0, bytemuck::cast_slice(&[Camera2DUniform {
+                view_proj: self.ui_camera.build_view_projection_matrix().to_cols_array_2d(),
             }]));
 
             self.model_camera.update_screen_size(PhysicalSize::new(width, height));
@@ -417,14 +406,13 @@ impl State {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.model_render_pipeline);
-            render_pass.set_bind_group(0, &self.model_camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.model_bind_group, &[]);
-            self.model_render.render(&mut render_pass);
-
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.ui_camera_bind_group, &[]);
             self.backend_graphics_interface.render(&mut render_pass);
+
+            render_pass.set_pipeline(&self.model_render_pipeline);
+            render_pass.draw_model(&self.obj_model, &self.model_camera_bind_group);
+            render_pass.draw_model(&self.obj_model_outer, &self.model_camera_bind_group);
         }
 
         self.queue.submit(iter::once(encoder.finish()));
