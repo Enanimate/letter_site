@@ -4,7 +4,6 @@ use crate::models::model::{Material, Mesh, Model};
 
 pub mod types;
 pub mod model;
-mod resource;
 
 pub trait DrawModel<'a> {
     #[allow(unused)]

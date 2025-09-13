@@ -1,6 +1,8 @@
 use anyhow::*;
 use image::GenericImageView;
 
+pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
+
 pub struct Texture {
     #[allow(unused)]
     pub texture: wgpu::Texture,
@@ -78,5 +80,29 @@ impl Texture {
             view,
             sampler,
         })
+    }
+
+    pub fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, label: &str) -> Self {
+        let size = wgpu::Extent3d {
+            width: config.width,
+            height: config.height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // The sampler isn't needed for stencil operations, so we can create a default one.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+
+        Self { texture, view, sampler }
     }
 }

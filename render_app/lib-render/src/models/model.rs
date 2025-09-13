@@ -2,7 +2,7 @@ use std::io::{BufReader, Cursor};
 
 use wgpu::util::DeviceExt;
 
-use crate::{models::{resource::{load_string, load_texture}, types::ModelVertex}, texture};
+use crate::{models::types::ModelVertex, texture, utilities::resource::{load_string, load_texture}};
 
 pub struct Model {
     pub meshes: Vec<Mesh>,

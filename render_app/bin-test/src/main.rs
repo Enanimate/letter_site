@@ -5,7 +5,7 @@ fn main() {
 
     interface.show(|ui| {
         ui.add_panel([0.0, 0.0, 1.0], [0.5, 0.5]);
-        ui.add_button([0.0, 0.0, 1.0], [0.25, 0.25], test);
+        //ui.add_button([0.0, 0.0, 1.0], [0.25, 0.25], test);
     });
 
     run(interface).unwrap();

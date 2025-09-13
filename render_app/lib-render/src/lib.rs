@@ -5,13 +5,14 @@ pub mod gui_backend;
 mod camera;
 mod models;
 mod texture;
+mod utilities;
 
 use wgpu::util::DeviceExt;
 use winit::{
     dpi::PhysicalSize, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window
 };
 
-use crate::{camera::{Camera2D, Camera2DUniform, Camera3D, Camera3DUniform}, gui_backend::BackendGraphicsInterface, models::{DrawModel, model, types::ModelVertex}, types::{GeometryType, Instance, Vertex}};
+use crate::{camera::{Camera2D, Camera2DUniform, Camera3D, Camera3DUniform}, gui_backend::BackendGraphicsInterface, models::{DrawModel, model, types::ModelVertex}, types::{GeometryType, Instance, Vertex}, utilities::pipeline::PipeLineBuilder};
 
 pub struct State {
     surface: wgpu::Surface<'static>,
@@ -20,7 +21,7 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     is_surface_configured: bool,
 
-    render_pipeline: wgpu::RenderPipeline,
+    ui_render_pipeline: wgpu::RenderPipeline,
     pub window: Arc<Window>,
 
     ui_camera: Camera2D,
@@ -37,6 +38,8 @@ pub struct State {
     model_render_pipeline: wgpu::RenderPipeline,
     obj_model: model::Model,
     obj_model_outer: model::Model,
+
+    rotation_angle: f32,
 }
 
 impl State {
@@ -94,11 +97,14 @@ impl State {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
+
+        let initial_width = window_size.width.max(1);
+        let initial_height = window_size.height.max(1);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: window_size.width,
-            height: window_size.height,
+            width: initial_width,
+            height: initial_height,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -181,7 +187,7 @@ impl State {
                 label: Some("texture_bind_group_layout"),
             });
 
-        let obj_model = model::load_model("a.obj", &device, &queue, &texture_bind_group_layout, 0.9, [1.0, 0.0, 0.0, 0.5]).await.unwrap();
+        let obj_model = model::load_model("a.obj", &device, &queue, &texture_bind_group_layout, 0.99, [1.0, 0.0, 0.0, 0.5]).await.unwrap();
         let obj_model_outer = model::load_model("a.obj", &device, &queue, &texture_bind_group_layout, 1.0, [0.0, 1.0, 0.0, 0.5]).await.unwrap();
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -234,66 +240,13 @@ impl State {
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            // If the pipeline will be used with a multiview render pass, this
-            // indicates how many array layers the attachments will have.
-            multiview: None,
-            // Useful for optimizing shader compilation on Android
-            cache: None,
-        });
-
-        let model_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/model_shader.wgsl").into()),
-        });
-
-        let model_render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let model_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Model Render Pipeline"),
-            layout: Some(&model_render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &model_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[
-                    ModelVertex::desc(),
-                ],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &model_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always, // No depth test
+                stencil: wgpu::StencilState::default(), // No stencil operations
+                bias: wgpu::DepthBiasState::default(),
             }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Cw,
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
-                // or Features::POLYGON_MODE_POINT
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: None,
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -305,6 +258,22 @@ impl State {
             // Useful for optimizing shader compilation on Android
             cache: None,
         });
+
+        let ui_render_pipeline = PipeLineBuilder::new(&device)
+            .set_shader_module("ui_shader.wgsl", "vs_main", "fs_main")
+            .add_bind_group_layout(&camera_bind_group_layout)
+            .add_vertex_buffer_layout(Vertex::desc())
+            .add_vertex_buffer_layout(Instance::desc())
+            .set_pixel_format(wgpu::TextureFormat::Rgba8UnormSrgb)
+            .build("UI Render Pipeline").await;
+
+        let model_render_pipeline = PipeLineBuilder::new(&device)
+            .set_shader_module("model_shader.wgsl", "vs_main", "fs_main")
+            .add_bind_group_layout(&texture_bind_group_layout)
+            .add_bind_group_layout(&camera_bind_group_layout)
+            .add_vertex_buffer_layout(ModelVertex::desc())
+            .set_pixel_format(wgpu::TextureFormat::Rgba8UnormSrgb)
+            .build("Model Render Pipeline").await;
 
         backend_graphics_interface.update_buffer_data(&queue, &vertices, &indices, &instances);
         Ok(Self {
@@ -313,7 +282,7 @@ impl State {
             queue,
             config,
             is_surface_configured: false,
-            render_pipeline,
+            ui_render_pipeline,
             window,
 
             ui_camera,
@@ -331,6 +300,8 @@ impl State {
 
             obj_model,
             obj_model_outer,
+
+            rotation_angle: 0.0,
         })
     }
 
@@ -363,7 +334,35 @@ impl State {
         }
     }
 
-    pub fn update(&mut self) {}
+    pub fn update(&mut self) {
+        // Define how fast the camera should spin.
+        // Smaller values are slower.
+        const ROTATION_SPEED: f32 = 0.005;
+
+        // 1. Increment the angle for the next frame.
+        self.rotation_angle += ROTATION_SPEED;
+
+        // 2. Calculate the new position using sin and cos.
+        // We get the radius from the camera's initial Z position.
+        let radius = 5.0; 
+        let new_x = radius * self.rotation_angle.cos();
+        let new_z = radius * self.rotation_angle.sin();
+
+        // 3. Update the camera's position.
+        // We only change x and z to orbit horizontally.
+        self.model_camera.position.x = new_x;
+        self.model_camera.position.z = new_z;
+
+        // 4. IMPORTANT: Update the camera's uniform buffer on the GPU.
+        // This sends the new camera data to your shader.
+        self.queue.write_buffer(
+            &self.model_camera_buffer, 
+            0, 
+            bytemuck::cast_slice(&[Camera3DUniform {
+                view_proj: self.model_camera.build_view_projection_matrix().to_cols_array_2d(),
+            }])
+        );
+    }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         self.window.request_redraw();
@@ -385,35 +384,50 @@ impl State {
             });
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    // ATTACH THE STENCIL BUFFER HERE
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.ui_camera_bind_group, &[]);
-            self.backend_graphics_interface.render(&mut render_pass);
+                // Your existing UI render call is fine
+                render_pass.set_pipeline(&self.ui_render_pipeline);
+                render_pass.set_bind_group(0, &self.ui_camera_bind_group, &[]);
+                self.backend_graphics_interface.render(&mut render_pass);
 
-            render_pass.set_pipeline(&self.model_render_pipeline);
-            render_pass.draw_model(&self.obj_model, &self.model_camera_bind_group);
-            render_pass.draw_model(&self.obj_model_outer, &self.model_camera_bind_group);
-        }
+                // --- NEW 3-PASS DRAWING LOGIC ---
+
+                // 1. Draw green 'A' to create the stencil mask (no color is written)
+                //render_pass.set_pipeline(&self.stencil_mask_pipeline);
+                //render_pass.set_stencil_reference(1);
+                //render_pass.draw_model(&self.obj_model_outer, &self.model_camera_bind_group);
+
+                // 2. Draw red 'A', using the stencil mask to clip it
+                //render_pass.set_pipeline(&self.stencil_draw_pipeline);
+                //render_pass.set_stencil_reference(1);
+                //render_pass.draw_model(&self.obj_model, &self.model_camera_bind_group);
+                
+                // 3. Draw the green 'A' normally so it's visible
+                render_pass.set_pipeline(&self.model_render_pipeline);
+                render_pass.draw_model(&self.obj_model_outer, &self.model_camera_bind_group);
+            }
+
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
